@@ -1,0 +1,2116 @@
+--[[
+╔══════════════════════════════════════════════════════╗
+║           DELTA SCRIPT HUB  v2.4                    ║
+║           © XMOTX511 - All Rights Reserved          ║
+║  زر ⚡ لإخفاء/إظهار | autocomplete | timer tracker  ║
+╚══════════════════════════════════════════════════════╝
+]]
+
+-- ════════════════════════════════════════════════════
+--  SERVICES
+-- ════════════════════════════════════════════════════
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local UIS          = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting     = game:GetService("Lighting")
+local VirtualUser  = game:GetService("VirtualUser")
+local SoundService = game:GetService("SoundService")
+
+local LP   = Players.LocalPlayer
+local PG   = LP.PlayerGui
+local Char = LP.Character or LP.CharacterAdded:Wait()
+local HRP  = Char:WaitForChild("HumanoidRootPart")
+local Hum  = Char:WaitForChild("Humanoid")
+LP.CharacterAdded:Connect(function(c)
+    Char = c
+    HRP  = c:WaitForChild("HumanoidRootPart")
+    Hum  = c:WaitForChild("Humanoid")
+end)
+
+-----------------------------------------------------------------
+--  نظام حماية مالكي السكربت (صارم لجميع المنصات)
+-----------------------------------------------------------------
+local OwnerUserIds = {
+    [2585382147] = true,  -- 👈 Traaqa
+    [8948572222] = true,  -- 👈 xmotx511
+    -- [رقم_آخر] = true,  -- يمكنك إضافة المزيد هنا
+}
+
+-- دالة للتحقق مما إذا كان الهدف من المالكين والمهاجم ليس منهم
+local function isTargetingOwner(targetPlayer)
+    if not targetPlayer then return false end
+    
+    -- إذا كان الهدف من قائمة المالكين
+    if OwnerUserIds[targetPlayer.UserId] then
+        -- إذا كان المهاجم (الذي يشغل السكربت) ليس من المالكين
+        if not OwnerUserIds[LP.UserId] then
+            return true  -- نعم، هذا هجوم على مالك
+        end
+    end
+    return false
+end
+
+-- دالة طرد المهاجم فوراً
+local function kickAttacker()
+    pcall(function()
+        LP:Kick("⚠️ هذا المستخدم محمي! لا يمكنك استهدافه")
+    end)
+end
+
+-- ════════════════════════════════════════════════════
+--  THEME (Red Dark)
+-- ════════════════════════════════════════════════════
+local T = {
+    Accent     = Color3.fromRGB(220, 40, 40),
+    AccentDim  = Color3.fromRGB(160, 15, 15),
+    AccentDark = Color3.fromRGB(55, 0, 0),
+    Background = Color3.fromRGB(4, 0, 0),
+    Panel      = Color3.fromRGB(16, 4, 4),
+    PanelLight = Color3.fromRGB(28, 7, 7),
+    Border     = Color3.fromRGB(70, 12, 12),
+    Text       = Color3.fromRGB(255, 210, 210),
+    TextDim    = Color3.fromRGB(170, 70, 70),
+    TextDark   = Color3.fromRGB(75, 18, 18),
+    ToggleOff  = Color3.fromRGB(12, 3, 3),
+    Green      = Color3.fromRGB(0, 200, 80),
+    Yellow     = Color3.fromRGB(255, 200, 0),
+}
+
+-- ════════════════════════════════════════════════════
+--  THEME (CmdBar Blue)
+-- ════════════════════════════════════════════════════
+local CB = {
+    Bg       = Color3.fromRGB(8, 8, 55),
+    Header   = Color3.fromRGB(15, 15, 90),
+    BtnBg    = Color3.fromRGB(25, 25, 180),
+    BtnHov   = Color3.fromRGB(45, 45, 220),
+    BtnPrs   = Color3.fromRGB(10, 10, 120),
+    Border   = Color3.fromRGB(50, 50, 200),
+    Text     = Color3.fromRGB(255, 255, 255),
+    TextDim  = Color3.fromRGB(180, 180, 255),
+    InputBg  = Color3.fromRGB(15, 15, 130),
+    PlusBg   = Color3.fromRGB(180, 0, 0),
+    MouseClr = Color3.fromRGB(150, 150, 150),
+}
+
+-- ════════════════════════════════════════════════════
+--  STATE
+-- ════════════════════════════════════════════════════
+local State = {
+    BangActive      = false,
+    BangTargetName  = nil,
+    FaceBangActive  = false,
+    CuffAutoRepeat  = false,
+    CuffTargetName  = nil,
+    TimerTargetName = nil,
+    TimerRunning    = false,
+    CharCopyActive  = false,
+    CharCopyTarget  = nil,
+    AntiLagActive   = false,
+    AntiAFK         = false,
+    FullBright      = false,
+    SoundEnabled    = true,
+    AutoRespawn     = false,
+    -- CmdBar
+    SpamActive      = false,
+    ChatLockActive  = false,
+    SpyMsgActive    = false,
+    SpamSpeed       = "1",
+    SpamText        = "test",
+}
+
+local StateListeners = {}
+local function OnStateChange(key, cb)
+    StateListeners[key] = StateListeners[key] or {}
+    table.insert(StateListeners[key], cb)
+end
+local function SetState(key, value)
+    State[key] = value
+    for _, cb in ipairs(StateListeners[key] or {}) do pcall(cb, value) end
+end
+
+-- ════════════════════════════════════════════════════
+--  HELPERS
+-- ════════════════════════════════════════════════════
+local Connections = {}
+local function AddConn(c) table.insert(Connections, c); return c end
+
+local function Tween(obj, props, dur, style, dir)
+    pcall(function()
+        TweenService:Create(obj,
+            TweenInfo.new(dur or 0.2, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+            props):Play()
+    end)
+end
+
+local function PlaySound(id)
+    if not State.SoundEnabled then return end
+    pcall(function()
+        local s = Instance.new("Sound")
+        s.SoundId = "rbxassetid://" .. id
+        s.Volume = 0.25
+        s.Parent = SoundService
+        s:Play()
+        game:GetService("Debris"):AddItem(s, 2)
+    end)
+end
+
+local function findPlayerByPrefix(prefix)
+    if not prefix or prefix == "" then return nil end
+    local low = prefix:lower()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then
+            if p.Name:lower():sub(1, #low) == low or
+               (p.DisplayName or ""):lower():sub(1, #low) == low then
+                return p
+            end
+        end
+    end
+    return nil
+end
+
+local function findPlayerExact(name)
+    if not name or name == "" then return nil end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name == name or p.DisplayName == name then return p end
+    end
+end
+
+local function getMatchingPlayers(prefix)
+    local list = {}
+    if not prefix or #prefix < 2 then return list end
+    local low = prefix:lower()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then
+            if p.Name:lower():sub(1, #low) == low or
+               (p.DisplayName or ""):lower():sub(1, #low) == low then
+                table.insert(list, p)
+            end
+        end
+    end
+    return list
+end
+
+local function fmtTime(secs)
+    local s  = math.floor(secs)
+    local h  = math.floor(s / 3600)
+    local m  = math.floor((s % 3600) / 60)
+    local sc = s % 60
+    if h > 0 then
+        return string.format("%02d:%02d:%02d", h, m, sc)
+    else
+        return string.format("%02d:%02d", m, sc)
+    end
+end
+
+-- ════════════════════════════════════════════════════
+--  DESTROY OLD GUIs
+-- ════════════════════════════════════════════════════
+for _, n in ipairs({"DeltaGUI", "DeltaToggleGui", "DeltaCmdBar"}) do
+    pcall(function() local g = PG:FindFirstChild(n); if g then g:Destroy() end end)
+    pcall(function() local g = game:GetService("CoreGui"):FindFirstChild(n); if g then g:Destroy() end end)
+end
+
+-- ════════════════════════════════════════════════════
+--  MENU DIMENSIONS
+-- ════════════════════════════════════════════════════
+local menuOpen       = false
+local MENU_W, MENU_H = 340, 480
+
+-- ════════════════════════════════════════════════════
+--  TOGGLE BUTTON  (CoreGui — دائم)
+-- ════════════════════════════════════════════════════
+local TG = Instance.new("ScreenGui")
+TG.Name = "DeltaToggleGui"
+TG.ResetOnSpawn = false
+TG.DisplayOrder = 9999
+TG.IgnoreGuiInset = true
+TG.Parent = game:GetService("CoreGui")
+
+local TBtn = Instance.new("TextButton", TG)
+TBtn.Text = "⚡"
+TBtn.Font = Enum.Font.GothamBold
+TBtn.TextSize = 18
+TBtn.TextColor3 = T.Accent
+TBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+TBtn.BorderSizePixel = 2
+TBtn.BorderColor3 = T.Accent
+TBtn.Size = UDim2.new(0, 42, 0, 42)
+TBtn.Position = UDim2.new(0, 10, 0.5, -21)
+TBtn.ZIndex = 999
+TBtn.Active = true
+
+-- ════════════════════════════════════════════════════
+--  MAIN GUI (ScreenGui)
+-- ════════════════════════════════════════════════════
+local SG = Instance.new("ScreenGui", PG)
+SG.Name = "DeltaGUI"
+SG.ResetOnSpawn = false
+SG.DisplayOrder = 998
+SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- ── Main Frame ───────────────────────────────────────
+local Main = Instance.new("Frame", SG)
+Main.Name = "Main"
+Main.Size = UDim2.new(0, MENU_W, 0, MENU_H)
+Main.Position = UDim2.new(0.5, -MENU_W / 2, 0.5, -MENU_H / 2)
+Main.BackgroundColor3 = T.Background
+Main.BorderSizePixel = 2
+Main.BorderColor3 = T.Accent
+Main.Active = true
+Main.Draggable = true
+Main.Visible = false
+
+-- ── Header ───────────────────────────────────────────
+local Header = Instance.new("Frame", Main)
+Header.Size = UDim2.new(1, 0, 0, 44)
+Header.BackgroundColor3 = T.Panel
+Header.BorderSizePixel = 0
+Header.ZIndex = 3
+
+local HLine = Instance.new("Frame", Header)
+HLine.Size = UDim2.new(1, 0, 0, 2)
+HLine.Position = UDim2.new(0, 0, 1, -2)
+HLine.BackgroundColor3 = T.Accent
+HLine.BorderSizePixel = 0
+HLine.ZIndex = 4
+
+local Logo = Instance.new("TextLabel", Header)
+Logo.Text = "⚡"
+Logo.Font = Enum.Font.GothamBold
+Logo.TextSize = 20
+Logo.TextColor3 = T.Accent
+Logo.BackgroundTransparency = 1
+Logo.Size = UDim2.new(0, 28, 1, 0)
+Logo.Position = UDim2.new(0, 8, 0, 0)
+Logo.ZIndex = 4
+
+local TitleL = Instance.new("TextLabel", Header)
+TitleL.Text = "DELTA v2.4"
+TitleL.Font = Enum.Font.GothamBold
+TitleL.TextSize = 15
+TitleL.TextColor3 = T.Accent
+TitleL.BackgroundTransparency = 1
+TitleL.Size = UDim2.new(0, 120, 0, 22)
+TitleL.Position = UDim2.new(0, 38, 0, 4)
+TitleL.TextXAlignment = Enum.TextXAlignment.Left
+TitleL.ZIndex = 4
+
+local SubL = Instance.new("TextLabel", Header)
+SubL.Text = "© XMOTX511"
+SubL.Font = Enum.Font.Code
+SubL.TextSize = 8
+SubL.TextColor3 = T.TextDark
+SubL.BackgroundTransparency = 1
+SubL.Size = UDim2.new(0, 120, 0, 14)
+SubL.Position = UDim2.new(0, 38, 0, 26)
+SubL.TextXAlignment = Enum.TextXAlignment.Left
+SubL.ZIndex = 4
+
+local BtnX = Instance.new("TextButton", Header)
+BtnX.Text = "✕"
+BtnX.Font = Enum.Font.GothamBold
+BtnX.TextSize = 12
+BtnX.TextColor3 = Color3.fromRGB(255, 80, 80)
+BtnX.BackgroundColor3 = T.PanelLight
+BtnX.BorderSizePixel = 1
+BtnX.BorderColor3 = Color3.fromRGB(255, 80, 80)
+BtnX.Size = UDim2.new(0, 26, 0, 22)
+BtnX.Position = UDim2.new(1, -32, 0.5, -11)
+BtnX.ZIndex = 5
+
+-- ── Content ScrollFrame ──────────────────────────────
+local CF = Instance.new("ScrollingFrame", Main)
+CF.Size = UDim2.new(1, 0, 0, MENU_H - 70)
+CF.Position = UDim2.new(0, 0, 0, 46)
+CF.BackgroundTransparency = 1
+CF.BorderSizePixel = 0
+CF.ScrollBarThickness = 3
+CF.ScrollBarImageColor3 = T.AccentDim
+CF.AutomaticCanvasSize = Enum.AutomaticSize.Y
+CF.CanvasSize = UDim2.new(0, 0, 0, 0)
+CF.ZIndex = 2
+local CL = Instance.new("UIListLayout", CF)
+CL.Padding = UDim.new(0, 4)
+CL.SortOrder = Enum.SortOrder.LayoutOrder
+local CP = Instance.new("UIPadding", CF)
+CP.PaddingTop = UDim.new(0, 8)
+CP.PaddingLeft = UDim.new(0, 8)
+CP.PaddingRight = UDim.new(0, 8)
+
+-- ── Status Bar ───────────────────────────────────────
+local SBar = Instance.new("Frame", Main)
+SBar.Size = UDim2.new(1, 0, 0, 26)
+SBar.Position = UDim2.new(0, 0, 1, -26)
+SBar.BackgroundColor3 = T.Panel
+SBar.BorderSizePixel = 0
+SBar.ZIndex = 3
+
+local SBarL = Instance.new("Frame", SBar)
+SBarL.Size = UDim2.new(1, 0, 0, 2)
+SBarL.BackgroundColor3 = T.Accent
+SBarL.BorderSizePixel = 0
+SBarL.ZIndex = 4
+
+local SDot = Instance.new("Frame", SBar)
+SDot.Size = UDim2.new(0, 6, 0, 6)
+SDot.Position = UDim2.new(0, 8, 0.5, -3)
+SDot.BackgroundColor3 = T.Accent
+SDot.BorderSizePixel = 0
+SDot.ZIndex = 4
+
+local STxt = Instance.new("TextLabel", SBar)
+STxt.Text = "● CONNECTED"
+STxt.Font = Enum.Font.Code
+STxt.TextSize = 8
+STxt.TextColor3 = T.TextDim
+STxt.BackgroundTransparency = 1
+STxt.Size = UDim2.new(1, -8, 1, 0)
+STxt.Position = UDim2.new(0, 20, 0, 0)
+STxt.TextXAlignment = Enum.TextXAlignment.Left
+STxt.ZIndex = 4
+
+-- ── Notification Frame ───────────────────────────────
+local NF = Instance.new("Frame", SG)
+NF.Name = "NotifFrame"
+NF.Size = UDim2.new(0, 220, 0, 54)
+NF.Position = UDim2.new(1, 10, 1, -70)
+NF.BackgroundColor3 = T.Panel
+NF.BorderSizePixel = 1
+NF.BorderColor3 = T.Accent
+NF.Visible = false
+NF.ZIndex = 20
+
+local NT = Instance.new("TextLabel", NF)
+NT.Name = "TitleLbl"
+NT.Font = Enum.Font.GothamBold
+NT.TextSize = 10
+NT.TextColor3 = T.Accent
+NT.BackgroundTransparency = 1
+NT.Size = UDim2.new(1, -10, 0, 20)
+NT.Position = UDim2.new(0, 8, 0, 6)
+NT.TextXAlignment = Enum.TextXAlignment.Left
+NT.ZIndex = 21
+
+local NM = Instance.new("TextLabel", NF)
+NM.Name = "MsgLbl"
+NM.Font = Enum.Font.Code
+NM.TextSize = 8
+NM.TextColor3 = T.TextDim
+NM.BackgroundTransparency = 1
+NM.Size = UDim2.new(1, -10, 0, 20)
+NM.Position = UDim2.new(0, 8, 0, 26)
+NM.TextXAlignment = Enum.TextXAlignment.Left
+NM.ZIndex = 21
+
+local NBar = Instance.new("Frame", NF)
+NBar.Size = UDim2.new(1, 0, 0, 2)
+NBar.BackgroundColor3 = T.Accent
+NBar.BorderSizePixel = 0
+NBar.ZIndex = 22
+
+-- ════════════════════════════════════════════════════
+--  NOTIFICATION SYSTEM
+-- ════════════════════════════════════════════════════
+local NotifQueue = {}
+local notifBusy  = false
+
+local function ShowNotif(title, msg)
+    table.insert(NotifQueue, {t = title, m = msg})
+end
+
+local function RunNotif()
+    if notifBusy or #NotifQueue == 0 then return end
+    notifBusy = true
+    local d = table.remove(NotifQueue, 1)
+    NT.Text = d.t
+    NM.Text = d.m
+    NF.Visible = true
+    NF.Position = UDim2.new(1, 10, 1, -70)
+    NF.BackgroundTransparency = 1
+    NT.TextTransparency = 1
+    NM.TextTransparency = 1
+    Tween(NF, {Position = UDim2.new(1, -230, 1, -70), BackgroundTransparency = 0}, 0.3, Enum.EasingStyle.Back)
+    Tween(NT, {TextTransparency = 0}, 0.3)
+    Tween(NM, {TextTransparency = 0}, 0.3)
+    task.delay(2.8, function()
+        Tween(NF, {Position = UDim2.new(1, 10, 1, -70), BackgroundTransparency = 1}, 0.3)
+        Tween(NT, {TextTransparency = 1}, 0.3)
+        Tween(NM, {TextTransparency = 1}, 0.3)
+        task.delay(0.35, function()
+            NF.Visible = false
+            notifBusy  = false
+            RunNotif()
+        end)
+    end)
+end
+
+-- ════════════════════════════════════════════════════
+--  MENU OPEN / CLOSE / TOGGLE
+-- ════════════════════════════════════════════════════
+local function OpenMenu()
+    menuOpen = true
+    Main.Visible = true
+    Main.Size = UDim2.new(0, MENU_W, 0, 10)
+    Main.BackgroundTransparency = 0.8
+    Tween(Main, {Size = UDim2.new(0, MENU_W, 0, MENU_H), BackgroundTransparency = 0},
+        0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    TBtn.Text = "✕"
+    TBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+    TBtn.BorderColor3 = Color3.fromRGB(255, 80, 80)
+end
+
+local function CloseMenu()
+    menuOpen = false
+    TBtn.Text = "⚡"
+    TBtn.TextColor3 = T.Accent
+    TBtn.BorderColor3 = T.Accent
+    Tween(Main, {Size = UDim2.new(0, MENU_W, 0, 0), BackgroundTransparency = 0.8},
+        0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    task.delay(0.27, function()
+        if not menuOpen then Main.Visible = false end
+    end)
+end
+
+local function ToggleMenu()
+    if menuOpen then CloseMenu() else OpenMenu() end
+end
+
+-- ════════════════════════════════════════════════════
+--  TOGGLE BUTTON — drag + click
+-- ════════════════════════════════════════════════════
+do
+    local pressing, hasMoved = false, false
+    local pressPos, startPos = nil, nil
+    local THRESH = 8
+
+    TBtn.InputBegan:Connect(function(inp)
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1
+        and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        pressing = true; hasMoved = false
+        pressPos = inp.Position; startPos = TBtn.Position
+    end)
+
+    UIS.InputChanged:Connect(function(inp)
+        if not pressing then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseMovement
+        and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        if not pressPos then return end
+        local d = inp.Position - pressPos
+        if d.Magnitude > THRESH then
+            hasMoved = true
+            TBtn.Position = UDim2.new(0, startPos.X.Offset + d.X, 0, startPos.Y.Offset + d.Y)
+        end
+    end)
+
+    UIS.InputEnded:Connect(function(inp)
+        if not pressing then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseButton1
+        and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        local click = not hasMoved
+        pressing = false; hasMoved = false
+        if click then ToggleMenu() end
+    end)
+end
+
+BtnX.MouseButton1Click:Connect(CloseMenu)
+BtnX.MouseEnter:Connect(function()
+    Tween(BtnX, {BackgroundColor3 = Color3.fromRGB(200, 30, 30), TextColor3 = Color3.new(1, 1, 1)}, 0.15)
+end)
+BtnX.MouseLeave:Connect(function()
+    Tween(BtnX, {BackgroundColor3 = T.PanelLight, TextColor3 = Color3.fromRGB(255, 80, 80)}, 0.15)
+end)
+
+AddConn(UIS.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.KeyCode == Enum.KeyCode.Insert or inp.KeyCode == Enum.KeyCode.F9 then ToggleMenu() end
+end))
+
+-- ════════════════════════════════════════════════════
+--  UI COMPONENTS (Red Menu)
+-- ════════════════════════════════════════════════════
+local function MkSection(txt, order)
+    local f = Instance.new("Frame", CF)
+    f.Size = UDim2.new(1, 0, 0, 20)
+    f.BackgroundTransparency = 1
+    f.LayoutOrder = order
+    local ln = Instance.new("Frame", f)
+    ln.Size = UDim2.new(1, 0, 0, 1)
+    ln.Position = UDim2.new(0, 0, 0.5, 0)
+    ln.BackgroundColor3 = T.AccentDark
+    ln.BorderSizePixel = 0
+    local lb = Instance.new("TextLabel", f)
+    lb.Text = "  " .. txt
+    lb.Font = Enum.Font.GothamBold
+    lb.TextSize = 8
+    lb.TextColor3 = T.TextDim
+    lb.BackgroundColor3 = T.Background
+    lb.BackgroundTransparency = 0
+    lb.Size = UDim2.new(0, 0, 1, 0)
+    lb.AutomaticSize = Enum.AutomaticSize.X
+    lb.Position = UDim2.new(0, 14, 0, 0)
+    lb.TextXAlignment = Enum.TextXAlignment.Left
+end
+
+local function MkToggle(icon, name, desc, key, order, onCB, offCB)
+    local row = Instance.new("Frame", CF)
+    row.Name = "T_" .. key
+    row.Size = UDim2.new(1, 0, 0, 44)
+    row.BackgroundColor3 = T.Panel
+    row.BorderSizePixel = 1
+    row.BorderColor3 = T.Border
+    row.LayoutOrder = order
+    row.ClipsDescendants = true
+
+    local bar = Instance.new("Frame", row)
+    bar.Size = UDim2.new(0, 3, 1, 0)
+    bar.BackgroundColor3 = T.Border
+    bar.BorderSizePixel = 0
+    bar.ZIndex = 2
+
+    local ic = Instance.new("TextLabel", row)
+    ic.Text = icon
+    ic.Font = Enum.Font.GothamBold
+    ic.TextSize = 15
+    ic.Size = UDim2.new(0, 28, 1, 0)
+    ic.Position = UDim2.new(0, 7, 0, 0)
+    ic.BackgroundTransparency = 1
+    ic.TextColor3 = T.TextDark
+    ic.ZIndex = 3
+
+    local nm = Instance.new("TextLabel", row)
+    nm.Text = name
+    nm.Font = Enum.Font.GothamBold
+    nm.TextSize = 10
+    nm.Size = UDim2.new(0.6, 0, 0, 18)
+    nm.Position = UDim2.new(0, 38, 0, 5)
+    nm.BackgroundTransparency = 1
+    nm.TextColor3 = T.TextDim
+    nm.TextXAlignment = Enum.TextXAlignment.Left
+    nm.ZIndex = 3
+
+    local ds = Instance.new("TextLabel", row)
+    ds.Text = desc
+    ds.Font = Enum.Font.Code
+    ds.TextSize = 7
+    ds.Size = UDim2.new(0.6, 0, 0, 14)
+    ds.Position = UDim2.new(0, 38, 0, 24)
+    ds.BackgroundTransparency = 1
+    ds.TextColor3 = T.TextDark
+    ds.TextXAlignment = Enum.TextXAlignment.Left
+    ds.ZIndex = 3
+
+    local track = Instance.new("Frame", row)
+    track.Size = UDim2.new(0, 34, 0, 17)
+    track.Position = UDim2.new(1, -44, 0.5, -8)
+    track.BackgroundColor3 = T.ToggleOff
+    track.BorderSizePixel = 1
+    track.BorderColor3 = T.Border
+    track.ZIndex = 3
+
+    local dot = Instance.new("Frame", track)
+    dot.Size = UDim2.new(0, 11, 0, 11)
+    dot.Position = UDim2.new(0, 2, 0.5, -5)
+    dot.BackgroundColor3 = T.TextDark
+    dot.BorderSizePixel = 0
+    dot.ZIndex = 4
+
+    local btn = Instance.new("TextButton", row)
+    btn.Text = ""
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.BorderSizePixel = 0
+    btn.ZIndex = 5
+
+    local function Refresh()
+        local on = State[key]
+        Tween(row,   {BackgroundColor3 = on and T.PanelLight or T.Panel},    0.2)
+        Tween(row,   {BorderColor3     = on and T.Accent or T.Border},       0.2)
+        Tween(bar,   {BackgroundColor3 = on and T.Accent or T.Border},       0.2)
+        Tween(track, {BackgroundColor3 = on and T.Panel or T.ToggleOff},     0.2)
+        Tween(track, {BorderColor3     = on and T.Accent or T.Border},       0.2)
+        Tween(dot,   {BackgroundColor3 = on and T.Accent or T.TextDark},     0.2)
+        Tween(dot,   {Position = on and UDim2.new(0, 19, 0.5, -5) or UDim2.new(0, 2, 0.5, -5)}, 0.2)
+        Tween(ic,    {TextColor3 = on and T.Accent or T.TextDark},           0.2)
+        Tween(nm,    {TextColor3 = on and T.Text or T.TextDim},              0.2)
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        SetState(key, not State[key])
+        Refresh()
+        PlaySound(4590662766)
+        ShowNotif((State[key] and "✅ " or "❌ ") .. name,
+                   State[key] and "تم التفعيل" or "تم الإيقاف")
+        task.spawn(RunNotif)
+        if State[key]  and onCB  then pcall(onCB) end
+        if not State[key] and offCB then pcall(offCB) end
+    end)
+    btn.MouseEnter:Connect(function()
+        if not State[key] then Tween(row, {BackgroundColor3 = T.PanelLight}, 0.15) end
+    end)
+    btn.MouseLeave:Connect(function()
+        if not State[key] then Tween(row, {BackgroundColor3 = T.Panel}, 0.15) end
+    end)
+    Refresh()
+    return row
+end
+
+local function MkButton(icon, name, desc, order, onClick)
+    local row = Instance.new("Frame", CF)
+    row.Name = "B_" .. name
+    row.Size = UDim2.new(1, 0, 0, 44)
+    row.BackgroundColor3 = T.Panel
+    row.BorderSizePixel = 1
+    row.BorderColor3 = T.Border
+    row.LayoutOrder = order
+
+    local bar = Instance.new("Frame", row)
+    bar.Size = UDim2.new(0, 3, 1, 0)
+    bar.BackgroundColor3 = T.Border
+    bar.BorderSizePixel = 0
+    bar.ZIndex = 2
+
+    local ic = Instance.new("TextLabel", row)
+    ic.Text = icon
+    ic.Font = Enum.Font.GothamBold
+    ic.TextSize = 15
+    ic.Size = UDim2.new(0, 28, 1, 0)
+    ic.Position = UDim2.new(0, 7, 0, 0)
+    ic.BackgroundTransparency = 1
+    ic.TextColor3 = T.TextDim
+    ic.ZIndex = 3
+
+    local nm = Instance.new("TextLabel", row)
+    nm.Text = name
+    nm.Font = Enum.Font.GothamBold
+    nm.TextSize = 10
+    nm.Size = UDim2.new(0.55, 0, 0, 18)
+    nm.Position = UDim2.new(0, 38, 0, 5)
+    nm.BackgroundTransparency = 1
+    nm.TextColor3 = T.TextDim
+    nm.TextXAlignment = Enum.TextXAlignment.Left
+    nm.ZIndex = 3
+
+    local ds = Instance.new("TextLabel", row)
+    ds.Text = desc
+    ds.Font = Enum.Font.Code
+    ds.TextSize = 7
+    ds.Size = UDim2.new(0.55, 0, 0, 14)
+    ds.Position = UDim2.new(0, 38, 0, 24)
+    ds.BackgroundTransparency = 1
+    ds.TextColor3 = T.TextDark
+    ds.TextXAlignment = Enum.TextXAlignment.Left
+    ds.ZIndex = 3
+
+    local eb = Instance.new("TextButton", row)
+    eb.Text = "▶ Run"
+    eb.Font = Enum.Font.GothamBold
+    eb.TextSize = 9
+    eb.TextColor3 = Color3.new(1, 1, 1)
+    eb.BackgroundColor3 = T.AccentDim
+    eb.BorderSizePixel = 0
+    eb.Size = UDim2.new(0, 54, 0, 26)
+    eb.Position = UDim2.new(1, -60, 0.5, -13)
+    eb.ZIndex = 5
+
+    eb.MouseButton1Click:Connect(function()
+        Tween(eb, {BackgroundColor3 = T.Accent}, 0.1)
+        task.delay(0.25, function() Tween(eb, {BackgroundColor3 = T.AccentDim}, 0.2) end)
+        PlaySound(4590662766)
+        if onClick then pcall(onClick) end
+    end)
+    eb.MouseEnter:Connect(function() Tween(eb, {BackgroundColor3 = T.Accent}, 0.15) end)
+    eb.MouseLeave:Connect(function() Tween(eb, {BackgroundColor3 = T.AccentDim}, 0.15) end)
+    return row
+end
+
+local function MkInput(label, key, order, onConfirm)
+    local row = Instance.new("Frame", CF)
+    row.Name = "I_" .. key
+    row.Size = UDim2.new(1, 0, 0, 40)
+    row.BackgroundColor3 = T.Panel
+    row.BorderSizePixel = 1
+    row.BorderColor3 = T.Border
+    row.LayoutOrder = order
+    row.ClipsDescendants = false
+
+    local bar = Instance.new("Frame", row)
+    bar.Size = UDim2.new(0, 3, 1, 0)
+    bar.BackgroundColor3 = T.AccentDark
+    bar.BorderSizePixel = 0
+    bar.ZIndex = 2
+
+    local lb = Instance.new("TextLabel", row)
+    lb.Text = label
+    lb.Font = Enum.Font.GothamBold
+    lb.TextSize = 9
+    lb.TextColor3 = T.TextDim
+    lb.BackgroundTransparency = 1
+    lb.Size = UDim2.new(0, 75, 1, 0)
+    lb.Position = UDim2.new(0, 8, 0, 0)
+    lb.TextXAlignment = Enum.TextXAlignment.Left
+    lb.ZIndex = 3
+
+    local tb = Instance.new("TextBox", row)
+    tb.PlaceholderText = "اكتب حرفين..."
+    tb.Text = State[key] or ""
+    tb.Font = Enum.Font.Gotham
+    tb.TextSize = 10
+    tb.TextColor3 = T.Text
+    tb.PlaceholderColor3 = T.TextDark
+    tb.BackgroundColor3 = T.PanelLight
+    tb.BorderSizePixel = 1
+    tb.BorderColor3 = T.AccentDark
+    tb.ClearTextOnFocus = false
+    tb.Size = UDim2.new(0, 165, 0, 26)
+    tb.Position = UDim2.new(0, 84, 0.5, -13)
+    tb.ZIndex = 3
+    tb.TextXAlignment = Enum.TextXAlignment.Left
+
+    local dropFrame = Instance.new("Frame", SG)
+    dropFrame.BackgroundColor3 = T.Panel
+    dropFrame.BorderSizePixel = 1
+    dropFrame.BorderColor3 = T.Accent
+    dropFrame.ZIndex = 50
+    dropFrame.Visible = false
+    dropFrame.Size = UDim2.new(0, 165, 0, 0)
+    local dropLayout = Instance.new("UIListLayout", dropFrame)
+    dropLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    dropLayout.Padding = UDim.new(0, 1)
+
+    local function HideDrop() dropFrame.Visible = false end
+
+    local function ShowDrop(matches)
+        local absPos  = tb.AbsolutePosition
+        local absSize = tb.AbsoluteSize
+        dropFrame.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 2)
+        for _, c in pairs(dropFrame:GetChildren()) do
+            if c:IsA("TextButton") then c:Destroy() end
+        end
+        if #matches == 0 then HideDrop(); return end
+        for i, p in ipairs(matches) do
+            if i > 6 then break end
+            local btn2 = Instance.new("TextButton", dropFrame)
+            btn2.Text = (p.DisplayName ~= p.Name and p.DisplayName .. " (" .. p.Name .. ")" or p.Name)
+            btn2.Font = Enum.Font.Gotham
+            btn2.TextSize = 9
+            btn2.TextColor3 = T.Text
+            btn2.BackgroundColor3 = T.PanelLight
+            btn2.BorderSizePixel = 0
+            btn2.Size = UDim2.new(1, 0, 0, 22)
+            btn2.TextXAlignment = Enum.TextXAlignment.Left
+            btn2.ZIndex = 51
+            btn2.LayoutOrder = i
+            local pad = Instance.new("UIPadding", btn2)
+            pad.PaddingLeft = UDim.new(0, 6)
+            btn2.MouseEnter:Connect(function() Tween(btn2, {BackgroundColor3 = T.AccentDim}, 0.1) end)
+            btn2.MouseLeave:Connect(function() Tween(btn2, {BackgroundColor3 = T.PanelLight}, 0.1) end)
+            btn2.MouseButton1Click:Connect(function()
+                tb.Text = p.Name
+                SetState(key, p.Name)
+                HideDrop()
+                if onConfirm then pcall(onConfirm, p.Name) end
+            end)
+        end
+        dropFrame.Size = UDim2.new(0, 165, 0, math.min(#matches, 6) * 23)
+        dropFrame.Visible = true
+    end
+
+    tb:GetPropertyChangedSignal("Text"):Connect(function()
+        local typed = tb.Text
+        SetState(key, typed ~= "" and typed or nil)
+        if #typed >= 2 then
+            local matches = getMatchingPlayers(typed)
+            if #matches == 1 and matches[1].Name == typed then
+                HideDrop()
+                if onConfirm then pcall(onConfirm, matches[1].Name) end
+            elseif #matches > 0 then
+                ShowDrop(matches)
+            else
+                HideDrop()
+            end
+        else
+            HideDrop()
+        end
+    end)
+
+    tb.FocusLost:Connect(function(enter)
+        task.delay(0.15, HideDrop)
+        if enter then
+            local typed = tb.Text
+            if typed ~= "" then
+                local p = findPlayerByPrefix(typed)
+                if p then
+                    tb.Text = p.Name
+                    SetState(key, p.Name)
+                    if onConfirm then pcall(onConfirm, p.Name) end
+                end
+            end
+        end
+    end)
+
+    return row, tb
+end
+
+local function MkInfoRow(leftTxt, rightTxt, order, color)
+    local row = Instance.new("Frame", CF)
+    row.Size = UDim2.new(1, 0, 0, 30)
+    row.BackgroundColor3 = T.Panel
+    row.BorderSizePixel = 1
+    row.BorderColor3 = T.Border
+    row.LayoutOrder = order
+
+    local bar = Instance.new("Frame", row)
+    bar.Size = UDim2.new(0, 3, 1, 0)
+    bar.BackgroundColor3 = color or T.AccentDark
+    bar.BorderSizePixel = 0
+    bar.ZIndex = 2
+
+    local ll = Instance.new("TextLabel", row)
+    ll.Text = leftTxt
+    ll.Font = Enum.Font.GothamBold
+    ll.TextSize = 9
+    ll.TextColor3 = T.TextDim
+    ll.BackgroundTransparency = 1
+    ll.Size = UDim2.new(0.5, 0, 1, 0)
+    ll.Position = UDim2.new(0, 10, 0, 0)
+    ll.TextXAlignment = Enum.TextXAlignment.Left
+    ll.ZIndex = 3
+
+    local rl = Instance.new("TextLabel", row)
+    rl.Text = rightTxt
+    rl.Font = Enum.Font.Code
+    rl.TextSize = 9
+    rl.TextColor3 = color or T.Yellow
+    rl.BackgroundTransparency = 1
+    rl.Size = UDim2.new(0.5, 0, 1, 0)
+    rl.Position = UDim2.new(0.5, 0, 0, 0)
+    rl.TextXAlignment = Enum.TextXAlignment.Right
+    rl.ZIndex = 3
+
+    local rp = Instance.new("UIPadding", row)
+    rp.PaddingRight = UDim.new(0, 8)
+
+    return row, ll, rl
+end
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — BANG
+-- ════════════════════════════════════════════════════
+local maxForce = 9000000159744
+local animTrack, isAttached = nil, false
+local savedCC = {}
+
+local function destroyAttach(root)
+    if not root then return end
+    for _, o in pairs(root:GetChildren()) do
+        if tostring(o.Name):find("BANG") then pcall(function() o:Destroy() end) end
+    end
+end
+
+local function stopBANG()
+    if animTrack then pcall(function() animTrack:Stop() end) end
+    animTrack = nil
+end
+
+local function playBANG()
+    stopBANG()
+    if not Char then return end
+    local hum = Char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://" .. (hum.RigType == Enum.HumanoidRigType.R6 and "148840371" or "5918726674")
+    local animator = hum:FindFirstChildOfClass("Animator") or Instance.new("Animator", hum)
+    animTrack = animator:LoadAnimation(anim)
+    animTrack.Looped = true
+    pcall(function() animTrack:Play() end)
+    pcall(function() animTrack:AdjustSpeed(hum.RigType == Enum.HumanoidRigType.R6 and 4 or 9999) end)
+end
+
+local function disableCC()
+    if not Char then return end
+    for _, p in pairs(Char:GetDescendants()) do
+        if p:IsA("BasePart") then
+            if savedCC[p] == nil then savedCC[p] = p.CanCollide end
+            pcall(function() p.CanCollide = false end)
+        end
+    end
+end
+
+local function restoreCC()
+    for p, v in pairs(savedCC) do
+        if p and p.Parent then pcall(function() p.CanCollide = v end) end
+    end
+    savedCC = {}
+end
+
+local function attachTo(plr)
+    -- حماية صارمة: إذا كان الهدف من المالكين والمهاجم ليس منهم، اطرده
+    if isTargetingOwner(plr) then
+        kickAttacker()
+        return
+    end
+    
+    if not plr or not plr.Character or not Char then return end
+    local rm = Char:FindFirstChild("HumanoidRootPart")
+    local rt = plr.Character:FindFirstChild("HumanoidRootPart")
+    if not rm or not rt then return end
+    disableCC()
+    destroyAttach(rm)
+    local a0 = Instance.new("Attachment", rm); a0.Name = "BANGAttachment"
+    local a1 = Instance.new("Attachment", rt); a1.Name = "BANGTargetAttachment"; a1.Position = Vector3.new(0, 0, 1)
+    local ap = Instance.new("AlignPosition", rm); ap.Name = "BANGAlignPosition"
+    ap.Attachment0 = a0; ap.Attachment1 = a1
+    ap.MaxForce = maxForce; ap.Responsiveness = 500; ap.ReactionForceEnabled = false
+    local ao = Instance.new("AlignOrientation", rm); ao.Name = "BANGAlignOrientation"
+    ao.Attachment0 = a0; ao.Attachment1 = a1
+    ao.MaxTorque = maxForce; ao.Responsiveness = 500; ao.ReactionTorqueEnabled = false
+    playBANG()
+    isAttached = true
+end
+
+local function detach()
+    if Char then
+        local rm = Char:FindFirstChild("HumanoidRootPart")
+        if rm then destroyAttach(rm) end
+    end
+    stopBANG(); restoreCC(); isAttached = false
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.12)
+        if not State.BangActive or not State.BangTargetName then
+            if isAttached then detach() end
+        else
+            local t = findPlayerExact(State.BangTargetName)
+            if t and t.Character and Char then
+                local mr = Char:FindFirstChild("HumanoidRootPart")
+                local tr = t.Character:FindFirstChild("HumanoidRootPart")
+                if mr and tr then
+                    if not isAttached then
+                        pcall(attachTo, t)
+                    elseif not mr:FindFirstChild("BANGAttachment") or not tr:FindFirstChild("BANGTargetAttachment") then
+                        isAttached = false; pcall(attachTo, t)
+                    end
+                elseif isAttached then detach() end
+            elseif isAttached then detach() end
+        end
+    end
+end)
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — FACE BANG
+-- ════════════════════════════════════════════════════
+local fbConn = nil
+
+local function stopFB()
+    State.FaceBangActive = false
+    if fbConn then fbConn:Disconnect(); fbConn = nil end
+end
+
+local function startFB(t)
+    -- حماية صارمة: إذا كان الهدف من المالكين والمهاجم ليس منهم، اطرده
+    if isTargetingOwner(t) then
+        kickAttacker()
+        State.FaceBangActive = false
+        return 
+    end
+    
+    stopFB()
+    State.FaceBangActive = true
+    fbConn = RunService.Heartbeat:Connect(function()
+        if not State.FaceBangActive then stopFB(); return end
+        local tc, pc = t.Character, Char
+        if not tc or not pc then return end
+        local th = tc:FindFirstChild("Head")
+        local ph = pc:FindFirstChild("HumanoidRootPart")
+        if th and ph then
+            local osc = math.sin(tick() * 50) * 2
+            ph.CFrame = CFrame.new(th.Position + th.CFrame.LookVector * (2.5 + osc), th.Position)
+        end
+    end)
+end
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — CUFF
+-- ════════════════════════════════════════════════════
+local lastCuff = 0
+
+local function findCuffTool()
+    for _, c in ipairs({Char, LP.Backpack}) do
+        if c then
+            for _, t in ipairs(c:GetChildren()) do
+                if t:IsA("Tool") and t.Name:lower():find("كلبشه") then return t end
+            end
+        end
+    end
+end
+
+local function doCuff(plr)
+    -- حماية صارمة: إذا كان الهدف من المالكين والمهاجم ليس منهم، اطرده
+    if isTargetingOwner(plr) then
+        kickAttacker()
+        return false
+    end
+    
+    if not plr or not plr.Character then return false end
+    if (tick() - lastCuff) < 0.05 then return false end
+    local tool = findCuffTool()
+    if not tool then
+        ShowNotif("❌ خطأ", "لا توجد أداة كلبشة في حقيبتك")
+        task.spawn(RunNotif)
+        return false
+    end
+    local remote = tool:FindFirstChildWhichIsA("RemoteEvent")
+    if not remote then return false end
+    local op = tool.Parent
+    pcall(function() tool.Parent = Char end); task.wait(0.05)
+    pcall(function() remote:FireServer(plr.Character) end); task.wait(0.05)
+    pcall(function() tool.Parent = op or LP.Backpack end)
+    lastCuff = tick()
+    return true
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if State.CuffAutoRepeat and State.CuffTargetName then
+            local t = findPlayerExact(State.CuffTargetName)
+            if t then pcall(doCuff, t) end
+        end
+    end
+end)
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — TIMER + JOIN/LEAVE TRACKER
+-- ════════════════════════════════════════════════════
+local timerStart   = nil
+local timerElapsed = 0
+local joinCount    = 0
+local leaveCount   = 0
+local timerRunning = false
+
+local timerLabel   = nil
+local joinsLabel   = nil
+local leavesLabel  = nil
+local targetStatus = nil
+
+local function startTimer()
+    timerRunning = true
+    timerStart   = tick()
+end
+
+local function stopTimer()
+    if timerRunning and timerStart then
+        timerElapsed = timerElapsed + (tick() - timerStart)
+    end
+    timerRunning = false
+    timerStart   = nil
+end
+
+local function resetTimerStats()
+    stopTimer()
+    timerElapsed = 0; joinCount = 0; leaveCount = 0
+    if timerLabel  then timerLabel.Text  = "00:00" end
+    if joinsLabel  then joinsLabel.Text  = "دخل: 0" end
+    if leavesLabel then leavesLabel.Text = "خرج: 0" end
+    if targetStatus then targetStatus.Text = "غير متصل 🔴" end
+end
+
+Players.PlayerAdded:Connect(function(p)
+    -- حماية صارمة: إذا كان اللاعب المضاف من المالكين والمهاجم ليس منهم، اطرده
+    if OwnerUserIds[p.UserId] and not OwnerUserIds[LP.UserId] then
+        kickAttacker()
+        return
+    end
+    
+    if State.TimerTargetName and
+       (p.Name == State.TimerTargetName or p.DisplayName == State.TimerTargetName) then
+        joinCount = joinCount + 1
+        if not timerRunning then startTimer() end
+        if joinsLabel   then joinsLabel.Text   = "دخل: " .. joinCount end
+        if targetStatus then targetStatus.Text = "متصل 🟢" end
+        ShowNotif("🟢 دخل السيرفر", State.TimerTargetName .. " #" .. joinCount)
+        task.spawn(RunNotif)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    -- حماية صارمة: إذا كان اللاعب المغادر من المالكين والمهاجم ليس منهم، اطرده
+    if OwnerUserIds[p.UserId] and not OwnerUserIds[LP.UserId] then
+        kickAttacker()
+        return
+    end
+    
+    if State.TimerTargetName and
+       (p.Name == State.TimerTargetName or p.DisplayName == State.TimerTargetName) then
+        leaveCount = leaveCount + 1
+        if leavesLabel  then leavesLabel.Text  = "خرج: " .. leaveCount end
+        if targetStatus then targetStatus.Text = "غير متصل 🔴" end
+        ShowNotif("🔴 غادر السيرفر", State.TimerTargetName .. " #" .. leaveCount)
+        task.spawn(RunNotif)
+        stopTimer()
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if timerLabel then
+            local total = timerElapsed + (timerRunning and timerStart and (tick() - timerStart) or 0)
+            timerLabel.Text = fmtTime(total)
+        end
+    end
+end)
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — AUTO RESPAWN
+-- ════════════════════════════════════════════════════
+local autoRespawnCount = 0
+local autoRespawnLabel = nil
+
+local function doRespawn()
+    pcall(function() LP:LoadCharacter() end)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(4)
+        if State.AutoRespawn then
+            doRespawn()
+            autoRespawnCount = autoRespawnCount + 1
+            if autoRespawnLabel then
+                autoRespawnLabel.Text = "مرات الإحياء: " .. autoRespawnCount
+            end
+        end
+    end
+end)
+
+OnStateChange("AutoRespawn", function(v)
+    if not v then
+        autoRespawnCount = 0
+        if autoRespawnLabel then autoRespawnLabel.Text = "مرات الإحياء: 0" end
+    end
+end)
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — ANTI LAG
+-- ════════════════════════════════════════════════════
+local lagOrigPos = nil
+OnStateChange("AntiLagActive", function(v)
+    if v then
+        local hrp = Char and Char:FindFirstChild("HumanoidRootPart")
+        lagOrigPos = hrp and hrp.Position or nil
+    else
+        lagOrigPos = nil
+    end
+end)
+
+AddConn(RunService.Heartbeat:Connect(function()
+    if not State.AntiLagActive or not lagOrigPos then return end
+    local hrp = Char and Char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    pcall(function()
+        if (hrp.Position - lagOrigPos).Magnitude > 10000 then
+            hrp.CFrame = CFrame.new(lagOrigPos)
+            local h = Char:FindFirstChildOfClass("Humanoid")
+            if h then
+                h.PlatformStand = true
+                task.delay(2, function() if h then h.PlatformStand = false end end)
+            end
+        end
+    end)
+end))
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — VOID TP
+-- ════════════════════════════════════════════════════
+local voidSaved, voidAway = nil, false
+
+local function doVoid()
+    if voidAway then return end
+    local hrp = Char and Char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    voidSaved = hrp.CFrame; voidAway = true
+    pcall(function() hrp.CFrame = CFrame.new(9999999999, 999999, hrp.Position.Z) end)
+    ShowNotif("🌀 Void", "سيتم الإرجاع بعد 3 ثوان"); task.spawn(RunNotif)
+    task.delay(3, function()
+        local h2 = Char and Char:FindFirstChild("HumanoidRootPart")
+        if h2 and voidSaved then pcall(function() h2.CFrame = voidSaved end) end
+        voidAway = false; voidSaved = nil
+        ShowNotif("✅ عودة", "تم الإرجاع للموضع"); task.spawn(RunNotif)
+    end)
+end
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — SEND ADMIN COMMAND
+-- ════════════════════════════════════════════════════
+local function sendAdminCmd(cmd)
+    local sent = false
+    if not sent then pcall(function()
+        local RS = game:GetService("ReplicatedStorage")
+        local HD = RS:FindFirstChild("HDAdminHDClient")
+        if HD then
+            local Sig = HD:FindFirstChild("Signals")
+            if Sig then
+                local rcs = Sig:FindFirstChild("RequestCommandSilent")
+                if rcs then rcs:InvokeServer(cmd); sent = true end
+            end
+        end
+    end) end
+    if not sent then pcall(function()
+        local RS = game:GetService("ReplicatedStorage")
+        local HD = RS:FindFirstChild("HDAdminHDClient")
+        if HD then
+            local rf = HD:FindFirstChildWhichIsA("RemoteFunction")
+            if rf then rf:InvokeServer("ExecuteCommand", cmd); sent = true end
+        end
+    end) end
+    if not sent then pcall(function()
+        local RS = game:GetService("ReplicatedStorage")
+        local Ad = RS:FindFirstChild("Adonis") or RS:FindFirstChild("AdonisLoader")
+        if Ad then
+            local re = Ad:FindFirstChildWhichIsA("RemoteEvent")
+            if re then re:FireServer("Command", cmd); sent = true end
+        end
+    end) end
+    if not sent then pcall(function()
+        local RS = game:GetService("ReplicatedStorage")
+        local Ev = RS:FindFirstChild("Events")
+        if Ev then
+            local sm = Ev:FindFirstChild("SendMessage")
+            if sm then sm:FireServer(cmd); sent = true end
+        end
+    end) end
+    if not sent then pcall(function()
+        local TCS = game:FindService("TextChatService")
+        if TCS and TCS.ChatVersion == Enum.ChatVersion.TextChatService then
+            local channels = TCS:FindFirstChild("TextChannels")
+            if channels then
+                local ch = channels:FindFirstChild("RBXGeneral") or channels:FindFirstChildWhichIsA("TextChannel")
+                if ch then ch:SendAsync(cmd) end
+            end
+        end
+    end) end
+end
+
+-- دالة إرسال رسالة شات عادية
+local function sendChat(msg)
+    pcall(function()
+        local TCS = game:FindService("TextChatService")
+        if TCS and TCS.ChatVersion == Enum.ChatVersion.TextChatService then
+            local channels = TCS:FindFirstChild("TextChannels")
+            if channels then
+                local ch = channels:FindFirstChild("RBXGeneral") or channels:FindFirstChildWhichIsA("TextChannel")
+                if ch then ch:SendAsync(msg) end
+            end
+        end
+    end)
+    pcall(function()
+        local chat = game:GetService("Chat")
+        if chat then chat:Chat(Char and Char:FindFirstChild("Head"), msg) end
+    end)
+end
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — CHAR COPY (أوامر الضحية)
+-- ════════════════════════════════════════════════════
+local charCopyRunning = false
+local charCopyConn    = nil
+
+local function applyVictimCommands(name)
+    local cmds = {
+        ".size " .. name .. " 3",
+        ".height " .. name .. " 0",
+        ".neon " .. name,
+        ".color " .. name .. " pink",
+        ".frydance " .. name,
+        ".titlepk " .. name .. " عتوب",
+    }
+    for _, cmd in ipairs(cmds) do
+        pcall(function() sendAdminCmd(cmd) end)
+        task.wait(0.2)
+    end
+end
+
+local function stopCharCopy()
+    charCopyRunning = false
+    if charCopyConn then charCopyConn:Disconnect(); charCopyConn = nil end
+end
+
+local function startCharCopy(targetName)
+    if not targetName or targetName == "" then return end
+    stopCharCopy()
+    charCopyRunning = true
+    local resolvedName = targetName
+    local plr = findPlayerExact(targetName) or findPlayerByPrefix(targetName)
+    if plr then resolvedName = plr.Name end
+    task.spawn(function() applyVictimCommands(resolvedName) end)
+    local elapsed = 0
+    charCopyConn = RunService.Heartbeat:Connect(function(dt)
+        if not charCopyRunning then stopCharCopy(); return end
+        elapsed = elapsed + dt
+        if elapsed < 5 then return end
+        elapsed = 0
+        local p2 = findPlayerExact(State.CharCopyTarget or targetName) or findPlayerByPrefix(State.CharCopyTarget or targetName)
+        if p2 then resolvedName = p2.Name end
+        task.spawn(function() applyVictimCommands(resolvedName) end)
+    end)
+end
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — CMDBAR: SPAM
+-- ════════════════════════════════════════════════════
+local spamConn = nil
+
+local function stopSpam()
+    State.SpamActive = false
+    if spamConn then spamConn:Disconnect(); spamConn = nil end
+end
+
+local function startSpam()
+    stopSpam()
+    State.SpamActive = true
+    task.spawn(function()
+        while State.SpamActive do
+            local spd = tonumber(State.SpamSpeed) or 1
+            local txt = State.SpamText or "test"
+            if spd < 0.05 then spd = 0.05 end
+            sendChat(txt)
+            task.wait(spd)
+        end
+    end)
+end
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — CMDBAR: CHAT LOCK
+-- ════════════════════════════════════════════════════
+-- تعليق الشات: يرسل رسائل بشكل متكرر لإغراق الشات
+local chatLockConn = nil
+
+local function stopChatLock()
+    State.ChatLockActive = false
+    if chatLockConn then chatLockConn:Disconnect(); chatLockConn = nil end
+end
+
+local function startChatLock()
+    stopChatLock()
+    State.ChatLockActive = true
+    task.spawn(function()
+        local chars = {".", " ", "‎", "　", "ㅤ"}
+        local idx = 1
+        while State.ChatLockActive do
+            sendChat(chars[idx])
+            idx = (idx % #chars) + 1
+            task.wait(0.3)
+        end
+    end)
+end
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — CMDBAR: SPY MESSAGES
+-- ════════════════════════════════════════════════════
+local spyConn = nil
+local spyLog  = {}
+
+local function stopSpy()
+    State.SpyMsgActive = false
+    if spyConn then spyConn:Disconnect(); spyConn = nil end
+end
+
+local function startSpy()
+    stopSpy()
+    State.SpyMsgActive = true
+    spyLog = {}
+    spyConn = Players.PlayerAdded:Connect(function() end) -- placeholder
+    -- نستمع لرسائل كل اللاعبين
+    local function hookPlayer(p)
+        if p == LP then return end
+        p.Chatted:Connect(function(msg)
+            if not State.SpyMsgActive then return end
+            local entry = "[" .. p.Name .. "]: " .. msg
+            table.insert(spyLog, 1, entry)
+            if #spyLog > 20 then table.remove(spyLog, #spyLog) end
+            ShowNotif("🔍 " .. p.Name, msg:sub(1, 40))
+            task.spawn(RunNotif)
+        end)
+    end
+    for _, p in ipairs(Players:GetPlayers()) do hookPlayer(p) end
+    spyConn = Players.PlayerAdded:Connect(hookPlayer)
+end
+
+-- ════════════════════════════════════════════════════
+--  LOGIC — MISC
+-- ════════════════════════════════════════════════════
+AddConn(LP.Idled:Connect(function()
+    if State.AntiAFK then
+        pcall(function()
+            VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+            task.wait(0.1)
+            VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        end)
+    end
+end))
+
+local fbTick = 0
+AddConn(RunService.Heartbeat:Connect(function(dt)
+    fbTick = fbTick + dt
+    if fbTick < 1 then return end
+    fbTick = 0
+    if State.FullBright then pcall(function()
+        Lighting.Brightness   = 2
+        Lighting.ClockTime    = 14
+        Lighting.FogEnd       = 1e6
+        Lighting.GlobalShadows = false
+        Lighting.Ambient      = Color3.new(1, 1, 1)
+    end) end
+end))
+
+-- ════════════════════════════════════════════════════
+--  POPULATE MAIN MENU
+-- ════════════════════════════════════════════════════
+
+-- ─── 1. الاستهداف / BANG ─────────────────────────────
+MkSection("🎯  الاستهداف / BANG", 1)
+MkInput("🎯 الهدف", "BangTargetName", 2, function(name)
+    State.BangTargetName = name
+end)
+MkToggle("💥", "BANG", "إلصق بجسم الهدف", "BangActive", 3,
+    function()
+        local t = findPlayerExact(State.BangTargetName)
+        if t then attachTo(t)
+        else ShowNotif("❌ الهدف", "اللاعب غير موجود في السيرفر"); task.spawn(RunNotif) end
+    end,
+    function() detach() end
+)
+MkButton("😈", "FACE BANG", "انظر لوجه الهدف", 4, function()
+    local t = findPlayerExact(State.BangTargetName)
+    if not t then ShowNotif("❌ الهدف", "اللاعب غير موجود"); task.spawn(RunNotif); return end
+    if State.FaceBangActive then
+        stopFB(); ShowNotif("😈 FACE BANG", "تم الإيقاف"); task.spawn(RunNotif)
+    else
+        startFB(t); ShowNotif("😈 FACE BANG", "تم التفعيل على " .. t.Name); task.spawn(RunNotif)
+    end
+end)
+
+-- ─── 2. الكلبشة / CUFF ───────────────────────────────
+MkSection("🔒  الكلبشة / CUFF", 10)
+MkInput("🔒 الهدف", "CuffTargetName", 11)
+MkButton("🔒", "كلبشة فورية", "كلبشة مرة واحدة", 12, function()
+    local t = findPlayerExact(State.CuffTargetName) or findPlayerByPrefix(State.CuffTargetName or "")
+    if t then
+        local ok = doCuff(t)
+        if ok then ShowNotif("🔒 تمت", "كُلبش " .. t.Name)
+        else ShowNotif("❌ فشل", "تأكد من وجود أداة كلبشة") end
+    else ShowNotif("❌ خطأ", "اللاعب غير موجود") end
+    task.spawn(RunNotif)
+end)
+MkToggle("🔁", "AUTO CUFF", "تكرار الكلبشة تلقائياً", "CuffAutoRepeat", 13)
+
+-- ─── 3. تايمر الاستهداف ──────────────────────────────
+MkSection("⏱  تايمر الاستهداف / TRACKER", 20)
+local _, _ = MkInput("⏱ الهدف", "TimerTargetName", 21, function(name)
+    State.TimerTargetName = name
+    resetTimerStats()
+    local p = findPlayerExact(name) or findPlayerByPrefix(name or "")
+    if p then
+        if targetStatus then targetStatus.Text = "متصل 🟢" end
+        startTimer()
+    else
+        if targetStatus then targetStatus.Text = "غير متصل 🔴" end
+    end
+end)
+local _, _, statusRL = MkInfoRow("الحالة:", "غير متصل 🔴", 22, T.TextDim)
+targetStatus = statusRL
+local _, _, timerRL = MkInfoRow("⏱ المدة:", "00:00", 23, T.Yellow)
+timerLabel = timerRL
+
+do
+    local cntRow = Instance.new("Frame", CF)
+    cntRow.Size = UDim2.new(1, 0, 0, 30); cntRow.BackgroundColor3 = T.Panel
+    cntRow.BorderSizePixel = 1; cntRow.BorderColor3 = T.Border; cntRow.LayoutOrder = 24
+    local cbar = Instance.new("Frame", cntRow); cbar.Size = UDim2.new(0, 3, 1, 0)
+    cbar.BackgroundColor3 = T.AccentDark; cbar.BorderSizePixel = 0; cbar.ZIndex = 2
+    local jl = Instance.new("TextLabel", cntRow); jl.Text = "دخل: 0"
+    jl.Font = Enum.Font.GothamBold; jl.TextSize = 9; jl.TextColor3 = T.Green
+    jl.BackgroundTransparency = 1; jl.Size = UDim2.new(0.5, 0, 1, 0)
+    jl.Position = UDim2.new(0, 10, 0, 0); jl.TextXAlignment = Enum.TextXAlignment.Left; jl.ZIndex = 3
+    local ll2 = Instance.new("TextLabel", cntRow); ll2.Text = "خرج: 0"
+    ll2.Font = Enum.Font.GothamBold; ll2.TextSize = 9; ll2.TextColor3 = T.Accent
+    ll2.BackgroundTransparency = 1; ll2.Size = UDim2.new(0.5, -8, 1, 0)
+    ll2.Position = UDim2.new(0.5, 0, 0, 0); ll2.TextXAlignment = Enum.TextXAlignment.Right; ll2.ZIndex = 3
+    joinsLabel  = jl
+    leavesLabel = ll2
+end
+
+MkButton("▶", "بدء التايمر", "ابدأ عدّ الوقت يدوياً", 25, function()
+    if not State.TimerTargetName then ShowNotif("❌ خطأ", "اكتب اسم الهدف أولاً"); task.spawn(RunNotif); return end
+    startTimer(); ShowNotif("▶ تايمر", "بدأ العدّ على " .. State.TimerTargetName); task.spawn(RunNotif)
+end)
+MkButton("⏹", "إيقاف + تصفير", "أوقف وصفّر التايمر", 26, function()
+    resetTimerStats(); ShowNotif("⏹ تايمر", "تم التصفير"); task.spawn(RunNotif)
+end)
+
+-- ─── 4. أوامر الضحية / VICTIM COMMANDS ──────────────
+MkSection("🎭  أوامر الضحية / VICTIM CMD", 35)
+MkInput("🎭 الضحية", "CharCopyTarget", 36, function(name)
+    State.CharCopyTarget = name
+    if charCopyRunning then
+        stopCharCopy()
+        if name and name ~= "" then startCharCopy(name) end
+    end
+end)
+do
+    local wRow = Instance.new("Frame", CF)
+    wRow.Size = UDim2.new(1, 0, 0, 24); wRow.BackgroundColor3 = T.Panel
+    wRow.BorderSizePixel = 1; wRow.BorderColor3 = T.Border; wRow.LayoutOrder = 37
+    local wBar = Instance.new("Frame", wRow); wBar.Size = UDim2.new(0, 3, 1, 0)
+    wBar.BackgroundColor3 = T.Yellow; wBar.BorderSizePixel = 0; wBar.ZIndex = 2
+    local wLbl = Instance.new("TextLabel", wRow)
+    wLbl.Text = "⚠ يحتاج صلاحية أدمن — الأوامر صامتة"
+    wLbl.Font = Enum.Font.Code; wLbl.TextSize = 7; wLbl.TextColor3 = T.Yellow
+    wLbl.BackgroundTransparency = 1; wLbl.Size = UDim2.new(1, -10, 1, 0)
+    wLbl.Position = UDim2.new(0, 8, 0, 0); wLbl.TextXAlignment = Enum.TextXAlignment.Left; wLbl.ZIndex = 3
+end
+do
+    local infoRow = Instance.new("Frame", CF)
+    infoRow.Size = UDim2.new(1, 0, 0, 70); infoRow.BackgroundColor3 = T.Panel
+    infoRow.BorderSizePixel = 1; infoRow.BorderColor3 = T.Border; infoRow.LayoutOrder = 38
+    local iBar = Instance.new("Frame", infoRow); iBar.Size = UDim2.new(0, 3, 1, 0)
+    iBar.BackgroundColor3 = T.AccentDark; iBar.BorderSizePixel = 0; iBar.ZIndex = 2
+    local iLbl = Instance.new("TextLabel", infoRow)
+    iLbl.Text = "الأوامر:\n.size 3 | .height 0 | .neon\n.color pink | .frydance\n.titlepk عتوب"
+    iLbl.Font = Enum.Font.Code; iLbl.TextSize = 8; iLbl.TextColor3 = T.TextDim
+    iLbl.BackgroundTransparency = 1; iLbl.Size = UDim2.new(1, -14, 1, 0)
+    iLbl.Position = UDim2.new(0, 10, 0, 0)
+    iLbl.TextXAlignment = Enum.TextXAlignment.Left
+    iLbl.TextYAlignment = Enum.TextYAlignment.Center; iLbl.ZIndex = 3
+end
+MkToggle("🎭", "AUTO VICTIM", "تطبيق الأوامر على الضحية تلقائياً", "CharCopyActive", 39,
+    function()
+        local target = State.CharCopyTarget
+        if not target or target == "" then
+            SetState("CharCopyActive", false)
+            ShowNotif("❌ خطأ", "اكتب اسم الضحية أولاً"); task.spawn(RunNotif); return
+        end
+        startCharCopy(target)
+        ShowNotif("🎭 AUTO VICTIM", "يعمل على: " .. target); task.spawn(RunNotif)
+    end,
+    function() stopCharCopy(); ShowNotif("🎭 AUTO VICTIM", "تم الإيقاف"); task.spawn(RunNotif) end
+)
+MkButton("⚡", "تطبيق الآن", "تطبيق الأوامر على الضحية فوراً", 40, function()
+    local target = State.CharCopyTarget
+    if not target or target == "" then ShowNotif("❌ خطأ", "اكتب اسم الضحية أولاً"); task.spawn(RunNotif); return end
+    local plr  = findPlayerExact(target) or findPlayerByPrefix(target)
+    local name = plr and plr.Name or target
+    task.spawn(function() applyVictimCommands(name) end)
+    ShowNotif("⚡ تطبيق", "تم إرسال الأوامر على: " .. name); task.spawn(RunNotif)
+end)
+MkButton("🔄", "إلغاء الأوامر", "أعد الضحية لحالتها الأصلية", 41, function()
+    stopCharCopy(); SetState("CharCopyActive", false)
+    local target = State.CharCopyTarget
+    if not target or target == "" then ShowNotif("❌ خطأ", "اكتب اسم الضحية أولاً"); task.spawn(RunNotif); return end
+    local plr  = findPlayerExact(target) or findPlayerByPrefix(target)
+    local name = plr and plr.Name or target
+    task.spawn(function()
+        local undoCmds = {
+            ".size " .. name .. " 1", ".height " .. name .. " 1",
+            ".unneon " .. name, ".uncolor " .. name,
+            ".unemote " .. name, ".untitle " .. name,
+        }
+        for _, cmd in ipairs(undoCmds) do
+            pcall(function() sendAdminCmd(cmd) end); task.wait(0.2)
+        end
+    end)
+    ShowNotif("🔄 إلغاء", "تمت استعادة الضحية: " .. name); task.spawn(RunNotif)
+end)
+do
+    local cmdRow = Instance.new("Frame", CF)
+    cmdRow.Size = UDim2.new(1, 0, 0, 40); cmdRow.BackgroundColor3 = T.Panel
+    cmdRow.BorderSizePixel = 1; cmdRow.BorderColor3 = T.Border; cmdRow.LayoutOrder = 42
+    local cmdBar = Instance.new("Frame", cmdRow); cmdBar.Size = UDim2.new(0, 3, 1, 0)
+    cmdBar.BackgroundColor3 = T.AccentDark; cmdBar.BorderSizePixel = 0; cmdBar.ZIndex = 2
+    local cmdLbl = Instance.new("TextLabel", cmdRow); cmdLbl.Text = "⌨ أمر"
+    cmdLbl.Font = Enum.Font.GothamBold; cmdLbl.TextSize = 9; cmdLbl.TextColor3 = T.TextDim
+    cmdLbl.BackgroundTransparency = 1; cmdLbl.Size = UDim2.new(0, 45, 1, 0)
+    cmdLbl.Position = UDim2.new(0, 8, 0, 0); cmdLbl.TextXAlignment = Enum.TextXAlignment.Left; cmdLbl.ZIndex = 3
+    local cmdTB = Instance.new("TextBox", cmdRow)
+    cmdTB.PlaceholderText = ".cmd PlayerName"; cmdTB.Text = ""
+    cmdTB.Font = Enum.Font.Code; cmdTB.TextSize = 9
+    cmdTB.TextColor3 = T.Text; cmdTB.PlaceholderColor3 = T.TextDark
+    cmdTB.BackgroundColor3 = T.PanelLight; cmdTB.BorderSizePixel = 1
+    cmdTB.BorderColor3 = T.AccentDark; cmdTB.ClearTextOnFocus = false
+    cmdTB.Size = UDim2.new(0, 170, 0, 26); cmdTB.Position = UDim2.new(0, 55, 0.5, -13)
+    cmdTB.ZIndex = 3; cmdTB.TextXAlignment = Enum.TextXAlignment.Left
+    local sendBtn = Instance.new("TextButton", cmdRow)
+    sendBtn.Text = "▶"; sendBtn.Font = Enum.Font.GothamBold; sendBtn.TextSize = 12
+    sendBtn.TextColor3 = Color3.new(1, 1, 1); sendBtn.BackgroundColor3 = T.AccentDim
+    sendBtn.BorderSizePixel = 0; sendBtn.Size = UDim2.new(0, 28, 0, 26)
+    sendBtn.Position = UDim2.new(1, -34, 0.5, -13); sendBtn.ZIndex = 5
+    sendBtn.MouseButton1Click:Connect(function()
+        local cmd = cmdTB.Text
+        if cmd == "" then return end
+        Tween(sendBtn, {BackgroundColor3 = T.Accent}, 0.1)
+        task.delay(0.2, function() Tween(sendBtn, {BackgroundColor3 = T.AccentDim}, 0.2) end)
+        sendAdminCmd(cmd); ShowNotif("⌨ أمر مُرسَل", cmd:sub(1, 30)); task.spawn(RunNotif)
+    end)
+    sendBtn.MouseEnter:Connect(function() Tween(sendBtn, {BackgroundColor3 = T.Accent}, 0.15) end)
+    sendBtn.MouseLeave:Connect(function() Tween(sendBtn, {BackgroundColor3 = T.AccentDim}, 0.15) end)
+    cmdTB.FocusLost:Connect(function(enter)
+        if enter and cmdTB.Text ~= "" then
+            sendAdminCmd(cmdTB.Text); ShowNotif("⌨ أمر مُرسَل", cmdTB.Text:sub(1, 30)); task.spawn(RunNotif)
+        end
+    end)
+end
+
+-- ─── 5. الحمايات ─────────────────────────────────────
+MkSection("🛡  الحمايات", 50)
+MkToggle("🛡", "ANTI LAG", "حماية من التعليق", "AntiLagActive", 51)
+MkToggle("☀", "FULLBRIGHT", "إضاءة كاملة", "FullBright", 52)
+MkToggle("🔗", "ANTI AFK", "منع طرد الخمول", "AntiAFK", 53)
+
+-- ─── 6. Void Teleport ────────────────────────────────
+MkSection("🌀  Void Teleport", 60)
+MkButton("🌀", "VOID TP", "انتقل للـ Void والعودة تلقائياً", 61, doVoid)
+
+-- ─── 7. إحياء تلقائي ─────────────────────────────────
+MkSection("💀  إحياء تلقائي / AUTO RESPAWN", 70)
+do
+    local cntRow2 = Instance.new("Frame", CF)
+    cntRow2.Size = UDim2.new(1, 0, 0, 30); cntRow2.BackgroundColor3 = T.Panel
+    cntRow2.BorderSizePixel = 1; cntRow2.BorderColor3 = T.Border; cntRow2.LayoutOrder = 71
+    local cBar2 = Instance.new("Frame", cntRow2); cBar2.Size = UDim2.new(0, 3, 1, 0)
+    cBar2.BackgroundColor3 = T.Green; cBar2.BorderSizePixel = 0; cBar2.ZIndex = 2
+    local cLbl = Instance.new("TextLabel", cntRow2)
+    cLbl.Text = "مرات الإحياء: 0"
+    cLbl.Font = Enum.Font.GothamBold; cLbl.TextSize = 9; cLbl.TextColor3 = T.Green
+    cLbl.BackgroundTransparency = 1; cLbl.Size = UDim2.new(1, -14, 1, 0)
+    cLbl.Position = UDim2.new(0, 10, 0, 0); cLbl.TextXAlignment = Enum.TextXAlignment.Left; cLbl.ZIndex = 3
+    autoRespawnLabel = cLbl
+end
+do
+    local wRow2 = Instance.new("Frame", CF)
+    wRow2.Size = UDim2.new(1, 0, 0, 24); wRow2.BackgroundColor3 = T.Panel
+    wRow2.BorderSizePixel = 1; wRow2.BorderColor3 = T.Border; wRow2.LayoutOrder = 72
+    local wBar2 = Instance.new("Frame", wRow2); wBar2.Size = UDim2.new(0, 3, 1, 0)
+    wBar2.BackgroundColor3 = T.Yellow; wBar2.BorderSizePixel = 0; wBar2.ZIndex = 2
+    local wLbl2 = Instance.new("TextLabel", wRow2)
+    wLbl2.Text = "⚠ يُحيي كل 4 ثوان — قد يُسبب loop في بعض الألعاب"
+    wLbl2.Font = Enum.Font.Code; wLbl2.TextSize = 7; wLbl2.TextColor3 = T.Yellow
+    wLbl2.BackgroundTransparency = 1; wLbl2.Size = UDim2.new(1, -10, 1, 0)
+    wLbl2.Position = UDim2.new(0, 8, 0, 0); wLbl2.TextXAlignment = Enum.TextXAlignment.Left; wLbl2.ZIndex = 3
+end
+MkToggle("💀", "AUTO RESPAWN", "إحياء تلقائي كل 4 ثوان إلى الأبد", "AutoRespawn", 73,
+    function()
+        doRespawn(); autoRespawnCount = autoRespawnCount + 1
+        if autoRespawnLabel then autoRespawnLabel.Text = "مرات الإحياء: " .. autoRespawnCount end
+        ShowNotif("💀 AUTO RESPAWN", "تم التفعيل — يُحيي كل 4 ثوان"); task.spawn(RunNotif)
+    end,
+    function() ShowNotif("💀 AUTO RESPAWN", "تم الإيقاف"); task.spawn(RunNotif) end
+)
+MkButton("⚡", "إحياء الآن", "إعادة إحياء فورية مرة واحدة", 74, function()
+    doRespawn(); ShowNotif("⚡ إحياء", "تمت إعادة الإحياء فوراً"); task.spawn(RunNotif)
+end)
+
+-- ════════════════════════════════════════════════════
+--  CMDBAR GUI  — نافذة منفصلة بتصميم أزرق
+-- ════════════════════════════════════════════════════
+
+-- ScreenGui مستقل للـ CmdBar
+local CBSG = Instance.new("ScreenGui", PG)
+CBSG.Name = "DeltaCmdBar"
+CBSG.ResetOnSpawn = false
+CBSG.DisplayOrder = 997
+CBSG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- أبعاد النافذة
+local CBW, CBH = 300, 230
+
+-- الإطار الرئيسي
+local CBMain = Instance.new("Frame", CBSG)
+CBMain.Name = "CBMain"
+CBMain.Size = UDim2.new(0, CBW, 0, CBH)
+CBMain.Position = UDim2.new(0.5, -CBW / 2, 0.5, MENU_H / 2 + 20)
+CBMain.BackgroundColor3 = CB.Bg
+CBMain.BorderSizePixel = 2
+CBMain.BorderColor3 = CB.Border
+CBMain.Active = true
+CBMain.Draggable = true
+CBMain.Visible = true
+
+-- ── Header الـ CmdBar ─────────────────────────────────
+-- الخلفية
+local CBHeader = Instance.new("Frame", CBMain)
+CBHeader.Size = UDim2.new(1, 0, 0, 36)
+CBHeader.BackgroundColor3 = CB.Header
+CBHeader.BorderSizePixel = 0
+CBHeader.ZIndex = 3
+
+-- خط سفلي على الـ Header
+local CBHLine = Instance.new("Frame", CBHeader)
+CBHLine.Size = UDim2.new(1, 0, 0, 2)
+CBHLine.Position = UDim2.new(0, 0, 1, -2)
+CBHLine.BackgroundColor3 = CB.Border
+CBHLine.BorderSizePixel = 0
+CBHLine.ZIndex = 4
+
+-- زر v (إخفاء/إظهار)
+local CBBtnV = Instance.new("TextButton", CBHeader)
+CBBtnV.Text = "v"
+CBBtnV.Font = Enum.Font.GothamBold
+CBBtnV.TextSize = 14
+CBBtnV.TextColor3 = CB.Text
+CBBtnV.BackgroundColor3 = CB.BtnBg
+CBBtnV.BorderSizePixel = 1
+CBBtnV.BorderColor3 = CB.Border
+CBBtnV.Size = UDim2.new(0, 28, 0, 24)
+CBBtnV.Position = UDim2.new(0, 4, 0.5, -12)
+CBBtnV.ZIndex = 5
+
+-- عنوان الـ Header
+local CBTitle = Instance.new("TextLabel", CBHeader)
+CBTitle.Text = "خانة الاوامر [Cmdbar]"
+CBTitle.Font = Enum.Font.GothamBold
+CBTitle.TextSize = 12
+CBTitle.TextColor3 = CB.Text
+CBTitle.BackgroundTransparency = 1
+CBTitle.Size = UDim2.new(1, -80, 1, 0)
+CBTitle.Position = UDim2.new(0, 38, 0, 0)
+CBTitle.TextXAlignment = Enum.TextXAlignment.Center
+CBTitle.ZIndex = 4
+
+-- زر ? (مساعدة)
+local CBBtnQ = Instance.new("TextButton", CBHeader)
+CBBtnQ.Text = "?"
+CBBtnQ.Font = Enum.Font.GothamBold
+CBBtnQ.TextSize = 14
+CBBtnQ.TextColor3 = CB.Text
+CBBtnQ.BackgroundColor3 = CB.BtnBg
+CBBtnQ.BorderSizePixel = 1
+CBBtnQ.BorderColor3 = CB.Border
+CBBtnQ.Size = UDim2.new(0, 28, 0, 24)
+CBBtnQ.Position = UDim2.new(1, -32, 0.5, -12)
+CBBtnQ.ZIndex = 5
+
+-- ── Body (المحتوى) ────────────────────────────────────
+local CBBody = Instance.new("Frame", CBMain)
+CBBody.Size = UDim2.new(1, 0, 0, CBH - 36)
+CBBody.Position = UDim2.new(0, 0, 0, 36)
+CBBody.BackgroundColor3 = CB.Bg
+CBBody.BorderSizePixel = 0
+CBBody.ZIndex = 2
+CBBody.Visible = true
+
+-- ── صف Inputs (سرعة + كلام) ──────────────────────────
+local CBInputRow = Instance.new("Frame", CBBody)
+CBInputRow.Size = UDim2.new(1, -16, 0, 32)
+CBInputRow.Position = UDim2.new(0, 8, 0, 6)
+CBInputRow.BackgroundTransparency = 1
+CBInputRow.ZIndex = 3
+
+-- Label سرعة
+local CBSpeedLbl = Instance.new("TextLabel", CBInputRow)
+CBSpeedLbl.Text = "سرعة"
+CBSpeedLbl.Font = Enum.Font.GothamBold
+CBSpeedLbl.TextSize = 11
+CBSpeedLbl.TextColor3 = CB.Text
+CBSpeedLbl.BackgroundColor3 = CB.BtnBg
+CBSpeedLbl.BorderSizePixel = 1
+CBSpeedLbl.BorderColor3 = CB.Border
+CBSpeedLbl.Size = UDim2.new(0, 48, 1, 0)
+CBSpeedLbl.Position = UDim2.new(1, -48, 0, 0)
+CBSpeedLbl.TextXAlignment = Enum.TextXAlignment.Center
+CBSpeedLbl.ZIndex = 4
+
+-- Input سرعة (قيمة رقمية بالثواني)
+local CBSpeedBox = Instance.new("TextBox", CBInputRow)
+CBSpeedBox.PlaceholderText = "1"
+CBSpeedBox.Text = State.SpamSpeed or "1"
+CBSpeedBox.Font = Enum.Font.Gotham
+CBSpeedBox.TextSize = 11
+CBSpeedBox.TextColor3 = CB.Text
+CBSpeedBox.PlaceholderColor3 = CB.TextDim
+CBSpeedBox.BackgroundColor3 = CB.InputBg
+CBSpeedBox.BorderSizePixel = 1
+CBSpeedBox.BorderColor3 = CB.Border
+CBSpeedBox.ClearTextOnFocus = false
+CBSpeedBox.Size = UDim2.new(0.35, 0, 1, 0)
+CBSpeedBox.Position = UDim2.new(0.58, 0, 0, 0)
+CBSpeedBox.TextXAlignment = Enum.TextXAlignment.Center
+CBSpeedBox.ZIndex = 4
+
+-- Label كلام
+local CBTxtLbl = Instance.new("TextLabel", CBInputRow)
+CBTxtLbl.Text = "كلام"
+CBTxtLbl.Font = Enum.Font.GothamBold
+CBTxtLbl.TextSize = 11
+CBTxtLbl.TextColor3 = CB.Text
+CBTxtLbl.BackgroundColor3 = CB.BtnBg
+CBTxtLbl.BorderSizePixel = 1
+CBTxtLbl.BorderColor3 = CB.Border
+CBTxtLbl.Size = UDim2.new(0, 48, 1, 0)
+CBTxtLbl.Position = UDim2.new(0.57, -52, 0, 0)
+CBTxtLbl.TextXAlignment = Enum.TextXAlignment.Center
+CBTxtLbl.ZIndex = 4
+
+-- Input كلام
+local CBTxtBox = Instance.new("TextBox", CBInputRow)
+CBTxtBox.PlaceholderText = "النص..."
+CBTxtBox.Text = State.SpamText or ""
+CBTxtBox.Font = Enum.Font.Gotham
+CBTxtBox.TextSize = 11
+CBTxtBox.TextColor3 = CB.Text
+CBTxtBox.PlaceholderColor3 = CB.TextDim
+CBTxtBox.BackgroundColor3 = CB.InputBg
+CBTxtBox.BorderSizePixel = 1
+CBTxtBox.BorderColor3 = CB.Border
+CBTxtBox.ClearTextOnFocus = false
+CBTxtBox.Size = UDim2.new(0.55, 0, 1, 0)
+CBTxtBox.Position = UDim2.new(0, 0, 0, 0)
+CBTxtBox.TextXAlignment = Enum.TextXAlignment.Right
+CBTxtBox.ZIndex = 4
+
+-- ربط inputs بالـ State
+CBSpeedBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local v = CBSpeedBox.Text
+    if v ~= "" then State.SpamSpeed = v end
+end)
+CBTxtBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local v = CBTxtBox.Text
+    if v ~= "" then State.SpamText = v end
+end)
+
+-- ── فاصل ──────────────────────────────────────────────
+local CBDivider = Instance.new("Frame", CBBody)
+CBDivider.Size = UDim2.new(1, -16, 0, 1)
+CBDivider.Position = UDim2.new(0, 8, 0, 44)
+CBDivider.BackgroundColor3 = CB.Border
+CBDivider.BorderSizePixel = 0
+CBDivider.ZIndex = 3
+
+-- ════════════════════════════════════════════════════
+--  Helper: زر CmdBar مع أيقونة ماوس على اليمين
+-- ════════════════════════════════════════════════════
+local function MkCBBtn(parent, labelTxt, posX, posY, w, h, hasMouseIcon, onClick)
+    -- الإطار الحاوي
+    local holder = Instance.new("Frame", parent)
+    holder.Size = UDim2.new(0, w + (hasMouseIcon and 22 or 0), 0, h)
+    holder.Position = UDim2.new(0, posX, 0, posY)
+    holder.BackgroundTransparency = 1
+    holder.ZIndex = 3
+
+    -- الزر نفسه
+    local btn = Instance.new("TextButton", holder)
+    btn.Text = labelTxt
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.TextColor3 = CB.Text
+    btn.BackgroundColor3 = CB.BtnBg
+    btn.BorderSizePixel = 1
+    btn.BorderColor3 = CB.Border
+    btn.Size = UDim2.new(0, w, 1, 0)
+    btn.Position = UDim2.new(0, 0, 0, 0)
+    btn.TextXAlignment = Enum.TextXAlignment.Center
+    btn.ZIndex = 4
+    btn.AutoButtonColor = false
+
+    -- أيقونة الماوس (دائرة رمادية صغيرة)
+    if hasMouseIcon then
+        local mIcon = Instance.new("Frame", holder)
+        mIcon.Size = UDim2.new(0, 18, 0, 18)
+        mIcon.Position = UDim2.new(0, w + 2, 0.5, -9)
+        mIcon.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        mIcon.BorderSizePixel = 1
+        mIcon.BorderColor3 = Color3.fromRGB(150, 150, 150)
+        mIcon.ZIndex = 4
+        -- نقطة تمثل الزر الأيسر للماوس
+        local mDot = Instance.new("Frame", mIcon)
+        mDot.Size = UDim2.new(0, 6, 0, 10)
+        mDot.Position = UDim2.new(0, 2, 0, 2)
+        mDot.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+        mDot.BorderSizePixel = 0
+        mDot.ZIndex = 5
+    end
+
+    -- تأثيرات hover وpress
+    local isOn = false
+    btn.MouseEnter:Connect(function()
+        if not isOn then Tween(btn, {BackgroundColor3 = CB.BtnHov}, 0.1) end
+    end)
+    btn.MouseLeave:Connect(function()
+        if not isOn then Tween(btn, {BackgroundColor3 = CB.BtnBg}, 0.1) end
+    end)
+    btn.MouseButton1Down:Connect(function()
+        Tween(btn, {BackgroundColor3 = CB.BtnPrs}, 0.08)
+    end)
+    btn.MouseButton1Up:Connect(function()
+        Tween(btn, {BackgroundColor3 = isOn and CB.BtnPrs or CB.BtnBg}, 0.08)
+    end)
+
+    -- دالة تفعيل/إيقاف بصري
+    local function setActive(v)
+        isOn = v
+        Tween(btn, {BackgroundColor3 = v and CB.BtnPrs or CB.BtnBg}, 0.15)
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        PlaySound(4590662766)
+        if onClick then pcall(onClick, setActive) end
+    end)
+
+    return btn, setActive
+end
+
+-- ════════════════════════════════════════════════════
+--  صف الأزرار — الصف الأول
+-- ════════════════════════════════════════════════════
+-- حسابات الأبعاد لتطابق الصورة بدقة
+local ROW1_Y  = 50   -- y من أعلى CBBody
+local ROW2_Y  = 100  -- y الصف الثاني
+local BTN_H   = 34
+local BTN_W   = 118  -- عرض الزر
+local GAP_X   = 8    -- مسافة من الحافة
+local CENTER_X = (CBW - 28) / 2 - 14  -- وسط لأيقونة +
+
+-- ── زر تعليق الشات (يمين) ────────────────────────────
+local chatLockBtn, chatLockSet = MkCBBtn(
+    CBBody,
+    "تعليق الشات",
+    CBW - GAP_X - BTN_W - 20,
+    ROW1_Y,
+    BTN_W, BTN_H,
+    true,
+    function(setActive)
+        if State.ChatLockActive then
+            stopChatLock(); setActive(false)
+            ShowNotif("💬 الشات", "تم إلغاء التعليق"); task.spawn(RunNotif)
+        else
+            startChatLock(); setActive(true)
+            ShowNotif("💬 الشات", "تعليق الشات مفعّل"); task.spawn(RunNotif)
+        end
+    end
+)
+
+-- ── أيقونة + الحمراء في الوسط ────────────────────────
+local CBPlusIcon = Instance.new("TextLabel", CBBody)
+CBPlusIcon.Text = "✚"
+CBPlusIcon.Font = Enum.Font.GothamBold
+CBPlusIcon.TextSize = 22
+CBPlusIcon.TextColor3 = Color3.fromRGB(220, 0, 0)
+CBPlusIcon.BackgroundTransparency = 1
+CBPlusIcon.Size = UDim2.new(0, 28, 0, BTN_H)
+CBPlusIcon.Position = UDim2.new(0.5, -14, 0, ROW1_Y)
+CBPlusIcon.TextXAlignment = Enum.TextXAlignment.Center
+CBPlusIcon.ZIndex = 4
+
+-- ── زر تفعيل سبام (يسار) ─────────────────────────────
+local spamBtn, spamSet = MkCBBtn(
+    CBBody,
+    "تفعيل سبام",
+    GAP_X,
+    ROW1_Y,
+    BTN_W, BTN_H,
+    false,
+    function(setActive)
+        if State.SpamActive then
+            stopSpam(); setActive(false)
+            ShowNotif("💬 سبام", "تم الإيقاف"); task.spawn(RunNotif)
+        else
+            local txt = CBTxtBox.Text
+            local spd = CBSpeedBox.Text
+            if txt == "" then
+                ShowNotif("❌ خطأ", "اكتب النص أولاً"); task.spawn(RunNotif); return
+            end
+            State.SpamText  = txt
+            State.SpamSpeed = (spd ~= "" and spd or "1")
+            startSpam(); setActive(true)
+            ShowNotif("💬 سبام", "يرسل كل " .. State.SpamSpeed .. "ث"); task.spawn(RunNotif)
+        end
+    end
+)
+
+-- فاصل بين الصفين
+local CBDivider2 = Instance.new("Frame", CBBody)
+CBDivider2.Size = UDim2.new(1, -16, 0, 1)
+CBDivider2.Position = UDim2.new(0, 8, 0, ROW1_Y + BTN_H + 6)
+CBDivider2.BackgroundColor3 = CB.Border
+CBDivider2.BorderSizePixel = 0
+CBDivider2.ZIndex = 3
+
+-- ════════════════════════════════════════════════════
+--  صف الأزرار — الصف الثاني
+-- ════════════════════════════════════════════════════
+
+-- ── زر تجسس الرسائل (يسار) ───────────────────────────
+local _, spySet = MkCBBtn(
+    CBBody,
+    "تجسس الرسائل",
+    GAP_X,
+    ROW2_Y,
+    BTN_W, BTN_H,
+    true,
+    function(setActive)
+        if State.SpyMsgActive then
+            stopSpy(); setActive(false)
+            ShowNotif("🔍 تجسس", "تم الإيقاف"); task.spawn(RunNotif)
+        else
+            startSpy(); setActive(true)
+            ShowNotif("🔍 تجسس", "يراقب رسائل الكل"); task.spawn(RunNotif)
+        end
+    end
+)
+
+-- ════════════════════════════════════════════════════
+--  إخفاء/إظهار Body بزر v
+-- ════════════════════════════════════════════════════
+local cbBodyVisible = true
+CBBtnV.MouseButton1Click:Connect(function()
+    cbBodyVisible = not cbBodyVisible
+    CBBody.Visible = cbBodyVisible
+    if cbBodyVisible then
+        CBBtnV.Text = "v"
+        Tween(CBMain, {Size = UDim2.new(0, CBW, 0, CBH)}, 0.2)
+    else
+        CBBtnV.Text = "►"
+        Tween(CBMain, {Size = UDim2.new(0, CBW, 0, 36)}, 0.2)
+    end
+end)
+
+-- زر ? (معلومات)
+CBBtnQ.MouseButton1Click:Connect(function()
+    ShowNotif("? مساعدة", "CmdBar: سبام | شات | تجسس")
+    task.spawn(RunNotif)
+end)
+
+-- hover effects للـ header buttons
+CBBtnV.MouseEnter:Connect(function() Tween(CBBtnV, {BackgroundColor3 = CB.BtnHov}, 0.1) end)
+CBBtnV.MouseLeave:Connect(function() Tween(CBBtnV, {BackgroundColor3 = CB.BtnBg}, 0.1) end)
+CBBtnQ.MouseEnter:Connect(function() Tween(CBBtnQ, {BackgroundColor3 = CB.BtnHov}, 0.1) end)
+CBBtnQ.MouseLeave:Connect(function() Tween(CBBtnQ, {BackgroundColor3 = CB.BtnBg}, 0.1) end)
+
+-- ════════════════════════════════════════════════════
+--  STATUS BLINK
+-- ════════════════════════════════════════════════════
+task.spawn(function()
+    while SG and SG.Parent do
+        SDot.Visible = not SDot.Visible
+        task.wait(0.8)
+    end
+end)
+
+-- ════════════════════════════════════════════════════
+--  BOOT
+-- ════════════════════════════════════════════════════
+task.spawn(function()
+    task.wait(0.5)
+    OpenMenu()
+    ShowNotif("XMO DELTA v2.4", "زر XMO لإخفاء/إظهار القائمة")
+    task.spawn(RunNotif)
+end)
+
+print("╔══════════════════════════════╗")
+print("║  DELTA v2.4  © XMOTX511     ║")
+print("║  زر XMO لإخفاء/إظهار القائمة ║")
+print("╚══════════════════════════════╝")
